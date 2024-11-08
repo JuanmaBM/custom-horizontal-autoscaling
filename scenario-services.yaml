@@ -1,0 +1,102 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: custom-autoscaler-test
+  name: 'http-kafka-mock'
+spec:
+  selector:
+    matchLabels:
+      app: http-kafka-mock
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: http-kafka-mock
+        openshift.io/cluster-monitoring: "true"
+    spec:
+      containers:
+        - name: container
+          image: quay.io/jbarea/http-kafka-mock:2.1
+          ports:
+            - containerPort: 8080
+              name: http-kafka
+          # Scenario 4
+          # resources:
+          #   requests:
+          #     cpu: "50m"
+          #     memory: "50Mi"
+          #   limits:
+          #     cpu: "200m"
+          #     memory: "256Mi"
+          env:
+            - name: KAFKA_TOPIC_NAME
+              value: "input"
+            - name: MOCK_KAFKA_SENDING_DELAY_MAX
+              value: "2000"
+            - name: MOCK_KAFKA_SENDING_DELAY_MIN
+              value: "2000"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "my-cluster-kafka-bootstrap.openshift-operators.svc.cluster.local:9092"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: http-kafka-mock
+  namespace: custom-autoscaler-test
+  labels:
+    app: http-kafka-mock
+spec:
+  selector:
+    app: http-kafka-mock
+  ports:
+    - name: http-kafka
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  name: http-kafka-mock
+  namespace: custom-autoscaler-test
+spec:
+  port:
+    targetPort: http-kafka
+  to:
+    kind: Service
+    name: http-kafka-mock
+    weight: 100
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: custom-autoscaler-test
+  name: 'kafka-kafka-mock'
+spec:
+  selector:
+    matchLabels:
+      app: kafka-kafka-mock
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: kafka-kafka-mock
+    spec:
+      containers:
+        - name: container
+          image: quay.io/jbarea/kafka-kafka-mock:2.2
+          env:
+            - name: KAFKA_TOPIC_INPUT
+              value: "input"
+            - name: KAFKA_TOPIC_OUTPUT
+              value: "output"
+            - name: MOCK_KAFKA_PROCESS_TIME
+              value: "0"
+            - name: CAMEL_COMPONENT_KAFKA_BROKERS
+              value: "my-cluster-kafka-bootstrap.openshift-operators.svc.cluster.local:9092"
+            - name: KAFKA_GROUP_ID
+              value: my-group
+---
