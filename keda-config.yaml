@@ -1,0 +1,122 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: thanos-token
+  annotations:
+    kubernetes.io/service-account.name: thanos 
+type: kubernetes.io/service-account-token
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: keda-trigger-auth-prometheus
+spec:
+  secretTargetRef: 
+  - parameter: bearerToken 
+    name: thanos-token 
+    key: token 
+  - parameter: ca
+    name: thanos-token
+    key: ca.crt
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: thanos-metrics-reader
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+- apiGroups:
+  - metrics.k8s.io
+  resources:
+  - pods
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: thanos-metrics-reader 
+  namespace: custom-autoscaler-test
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: thanos-metrics-reader
+subjects:
+- kind: ServiceAccount
+  name: thanos 
+  namespace: custom-autoscaler-test
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: quarkus-scaledobject
+  namespace: custom-autoscaler-test
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: http-kafka-mock
+  minReplicaCount: 1
+  # Scenario 4
+  # minReplicaCount: 2
+  maxReplicaCount: 6
+  cooldownPeriod: 10
+  pollingInterval: 5
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 10
+          policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 5
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: https://thanos-querier.openshift-monitoring.svc.cluster.local:9092
+        metricName: http_server_requests_seconds_max
+        query: sum(rate(http_server_requests_seconds_sum[10s]))/clamp_min(sum(rate(http_server_requests_seconds_count[10s])), 1)
+        threshold: '2'
+        authModes: bearer
+        namespace: custom-autoscaler-test
+      authenticationRef:
+        name: keda-trigger-auth-prometheus
+        kind: TriggerAuthentication
+    # Scenario 3
+    # - type: cpu 
+    #   metricType: Utilization 
+    #   metadata:
+    #     value: '80'
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: kafka-scaledobject
+  namespace: custom-autoscaler-test
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kafka-kafka-mock
+  minReplicaCount: 0
+  maxReplicaCount: 10
+  cooldownPeriod: 10
+  pollingInterval: 5
+  triggers:
+    - type: kafka
+      metadata:
+        topic: input
+        bootstrapServers: my-cluster-kafka-bootstrap.openshift-operators.svc.cluster.local:9092
+        lagThreshold: "10"
+        consumerGroup: my-group
+        activationLagThreshold: '5'
+        offsetResetPolicy: latest
