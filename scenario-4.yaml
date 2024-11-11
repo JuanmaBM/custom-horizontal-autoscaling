@@ -1,0 +1,79 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: custom-autoscaler-test
+  name: 'http-kafka-mock'
+spec:
+  selector:
+    matchLabels:
+      app: http-kafka-mock
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: http-kafka-mock
+        openshift.io/cluster-monitoring: "true"
+    spec:
+      containers:
+        - name: container
+          image: quay.io/jbarea/http-kafka-mock:2.1
+          ports:
+            - containerPort: 8080
+              name: http-kafka
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "50Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          env:
+            - name: KAFKA_TOPIC_NAME
+              value: "input"
+            - name: MOCK_KAFKA_SENDING_DELAY_MAX
+              value: "3000"
+            - name: MOCK_KAFKA_SENDING_DELAY_MIN
+              value: "1500"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "my-cluster-kafka-bootstrap.openshift-operators.svc.cluster.local:9092"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: quarkus-scaledobject
+  namespace: custom-autoscaler-test
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: http-kafka-mock
+  minReplicaCount: 2
+  maxReplicaCount: 6
+  cooldownPeriod: 10
+  pollingInterval: 5
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 10
+          policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 5
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: https://thanos-querier.openshift-monitoring.svc.cluster.local:9092
+        metricName: http_server_requests_seconds_max
+        query: sum(rate(http_server_requests_seconds_sum[10s]))/clamp_min(sum(rate(http_server_requests_seconds_count[10s])), 1)
+        threshold: '2'
+        authModes: bearer
+        namespace: custom-autoscaler-test
+      authenticationRef:
+        name: keda-trigger-auth-prometheus
+        kind: TriggerAuthentication
+    - type: cpu 
+      metricType: Utilization 
+      metadata:
+        value: '80'

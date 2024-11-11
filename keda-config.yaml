@@ -65,8 +65,6 @@ spec:
     kind: Deployment
     name: http-kafka-mock
   minReplicaCount: 1
-  # Scenario 4
-  # minReplicaCount: 2
   maxReplicaCount: 6
   cooldownPeriod: 10
   pollingInterval: 5
@@ -91,11 +89,6 @@ spec:
       authenticationRef:
         name: keda-trigger-auth-prometheus
         kind: TriggerAuthentication
-    # Scenario 3
-    # - type: cpu 
-    #   metricType: Utilization 
-    #   metadata:
-    #     value: '80'
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject

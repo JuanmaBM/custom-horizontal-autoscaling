@@ -21,14 +21,6 @@ spec:
           ports:
             - containerPort: 8080
               name: http-kafka
-          # Scenario 4
-          # resources:
-          #   requests:
-          #     cpu: "50m"
-          #     memory: "50Mi"
-          #   limits:
-          #     cpu: "200m"
-          #     memory: "256Mi"
           env:
             - name: KAFKA_TOPIC_NAME
               value: "input"
